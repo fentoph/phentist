@@ -3,4 +3,6 @@
     <!-- OAuth client identifier only; never put a Google client secret in the APK. -->
     <string name="default_web_client_id">382079669418-7kdktd129lrr1jtgid71ns4a3evosscb.apps.googleusercontent.com</string>
     <string name="google_sign_in_server_client_id">@string/default_web_client_id</string>
+    <!-- Replace with the deployed Phentist HTTPS API before release. -->
+    <string name="backend_base_url">https://api.example.com</string>
 </resources>
