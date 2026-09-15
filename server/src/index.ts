@@ -25,6 +25,8 @@ if (paymentsBasicPassword.length < 16) throw new Error('PAYMENTS_BASIC_PASSWORD 
 
 const jwtSecret = new TextEncoder().encode(sessionSecret);
 const google = new OAuth2Client(googleClientId);
+const paymentsUsername = paymentsBasicUsername;
+const paymentsPassword = paymentsBasicPassword;
 const pool = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
   : null;
@@ -96,8 +98,8 @@ function basicAuth(req: express.Request): boolean {
     const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
     const separator = decoded.indexOf(':'); if (separator < 0) return false;
     const username = decoded.slice(0, separator), password = decoded.slice(separator + 1);
-    const u = Buffer.from(username), eu = Buffer.from(paymentsBasicUsername);
-    const p = Buffer.from(password), ep = Buffer.from(paymentsBasicPassword);
+    const u = Buffer.from(username), eu = Buffer.from(paymentsUsername);
+    const p = Buffer.from(password), ep = Buffer.from(paymentsPassword);
     return u.length === eu.length && p.length === ep.length && crypto.timingSafeEqual(u, eu) && crypto.timingSafeEqual(p, ep);
   } catch { return false; }
 }
@@ -148,7 +150,6 @@ async function createPayment(req: express.Request, res: express.Response, create
   } catch (error) { console.error('Payment creation failed', error instanceof Error ? error.message : 'unknown'); return res.status(500).json({ error: 'payment_creation_failed' }); }
 }
 
-// Authenticated users can submit payment/customer details. Browser GET access is admin-protected separately.
 app.post('/payments', authenticate, async (req, res) => {
   const auth = (req as express.Request & { auth?: Record<string, unknown> }).auth!;
   return createPayment(req, res, String(auth.sub ?? auth.email));
