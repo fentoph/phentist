@@ -1,0 +1,49 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    - cron: "17 */12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Supabase REST API
+        shell: bash
+        env:
+          SUPABASE_URL: https://krghutvblrqgeboiljnc.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_PUBLISHABLE_KEY:-}" ]; then
+            echo "SUPABASE_PUBLISHABLE_KEY repository variable is missing."
+            exit 1
+          fi
+
+          status="$(curl \
+            --silent \
+            --show-error \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --max-time 20 \
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_PUBLISHABLE_KEY}" \
+            "${SUPABASE_URL}/rest/v1/content_items?select=id&limit=1")"
+
+          echo "Supabase HTTP status: ${status}"
+
+          case "${status}" in
+            200|206)
+              echo "Supabase responded successfully."
+              ;;
+            *)
+              echo "Supabase keepalive request failed."
+              exit 1
+              ;;
+          esac
