@@ -1,0 +1,27 @@
+name: Render Keepalive
+
+on:
+  schedule:
+    - cron: "37 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Render health endpoint
+        shell: bash
+        env:
+          RENDER_URL: https://phentist.onrender.com/health
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 30 --retry 3 --retry-delay 5 "${RENDER_URL}")"
+          echo "Render HTTP status: ${status}"
+          case "${status}" in
+            200|204) echo "Render service responded successfully." ;;
+            *) echo "Render keepalive request failed."; exit 1 ;;
+          esac
