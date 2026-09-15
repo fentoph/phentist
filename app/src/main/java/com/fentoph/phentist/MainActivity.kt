@@ -2,7 +2,6 @@ package com.fentoph.phentist
 
 import android.Manifest
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,18 +41,14 @@ fun PhentistApp() {
 
     MaterialTheme {
         Scaffold(topBar = { TopAppBar(title = { Text("Phentist") }) }) { padding ->
-            LazyColumn(
-                modifier = Modifier.padding(padding).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            LazyColumn(modifier = Modifier.padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 item { Text("Ta'lim materiallari", style = MaterialTheme.typography.headlineMedium) }
                 item { Text("Sotib olingan materiallar faqat hisobingiz orqali o'qiladi.") }
 
                 if (!session.signedIn) {
                     item {
                         Button(enabled = !busy, onClick = {
-                            busy = true
-                            message = null
+                            busy = true; message = null
                             scope.launch {
                                 googleSignIn.signIn(context as ComponentActivity).fold(
                                     onSuccess = { identity ->
@@ -71,20 +66,18 @@ fun PhentistApp() {
                             }
                         }) { Text(if (busy) "Kutilmoqda..." else "Google orqali kirish") }
                     }
-                } else {
-                    item { Text("Hisob: ${session.email}") }
-                }
+                } else item { Text("Hisob: ${session.email}") }
 
                 item { LibraryCard(LibraryItem("demo", "Protected document", "25 000 UZS", false), onPurchase = { paymentOpen = true }) }
 
                 if (paymentOpen) {
                     item {
-                        PaymentForm(
-                            enabled = session.signedIn && !busy,
-                            onSubmit = { name, surname, location, phone ->
-                                val token = session.accessToken ?: return@PaymentForm
-                                busy = true
-                                message = null
+                        PaymentForm(enabled = session.signedIn && !busy) { name, surname, location, phone ->
+                            val token = session.accessToken
+                            if (token.isNullOrBlank()) {
+                                message = "Iltimos, qayta Google orqali kiring."
+                            } else {
+                                busy = true; message = null
                                 scope.launch {
                                     PhentistApi.submitPayment(token, name, surname, location, phone).fold(
                                         onSuccess = { result ->
@@ -96,17 +89,12 @@ fun PhentistApp() {
                                     busy = false
                                 }
                             }
-                        )
+                        }
                     }
                 }
 
                 message?.let { text -> item { Text(text, color = MaterialTheme.colorScheme.primary) } }
-                item {
-                    Text(
-                        if (SecurityState.cameraGranted) "Ekran himoyasi yoqilgan." else "Kamera ruxsati talab qilinadi.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+                item { Text(if (SecurityState.cameraGranted) "Ekran himoyasi yoqilgan." else "Kamera ruxsati talab qilinadi.", style = MaterialTheme.typography.bodyMedium) }
             }
         }
     }
@@ -124,10 +112,7 @@ fun LibraryCard(item: LibraryItem, onPurchase: () -> Unit) {
 }
 
 @Composable
-fun PaymentForm(
-    enabled: Boolean,
-    onSubmit: (String, String, String, String) -> Unit
-) {
+fun PaymentForm(enabled: Boolean, onSubmit: (String, String, String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var surname by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
@@ -141,11 +126,7 @@ fun PaymentForm(
             OutlinedTextField(location, { location = it }, Modifier.fillMaxWidth(), enabled = enabled, label = { Text("Manzil") }, singleLine = true)
             OutlinedTextField(phone, { phone = it }, Modifier.fillMaxWidth(), enabled = enabled, label = { Text("Telefon raqami") }, singleLine = true)
             Text("Xizmat e-maili: aslbekqoziboyev536@gmail.com", style = MaterialTheme.typography.bodySmall)
-            Button(
-                enabled = enabled && name.isNotBlank() && surname.isNotBlank() && location.isNotBlank() && phone.isNotBlank(),
-                onClick = { onSubmit(name.trim(), surname.trim(), location.trim(), phone.trim()) },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("To'lovni davom ettirish") }
+            Button(enabled = enabled && name.isNotBlank() && surname.isNotBlank() && location.isNotBlank() && phone.isNotBlank(), onClick = { onSubmit(name.trim(), surname.trim(), location.trim(), phone.trim()) }, modifier = Modifier.fillMaxWidth()) { Text("To'lovni davom ettirish") }
         }
     }
 }
