@@ -1,0 +1,44 @@
+name: Android debug SHA-1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sha1:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate temporary debug keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/phentist"
+          keytool -genkeypair \
+            -keystore "$RUNNER_TEMP/phentist/debug.keystore" \
+            -storepass android \
+            -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -noprompt
+
+      - name: Print SHA-1 fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Phentist Android debug SHA-1:"
+          keytool -list -v \
+            -keystore "$RUNNER_TEMP/phentist/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey | grep -i '^SHA1:'
+
+      - name: Delete temporary keystore
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/phentist"
