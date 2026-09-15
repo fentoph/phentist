@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">Phentist</string>
-    <!-- Replace with the Web OAuth client ID from Google Cloud/Firebase before release. -->
-    <string name="default_web_client_id">REPLACE_WITH_WEB_OAUTH_CLIENT_ID</string>
+    <!-- OAuth client identifier only; never put a Google client secret in the APK. -->
+    <string name="default_web_client_id">382079669418-7kdktd129lrr1jtgid71ns4a3evosscb.apps.googleusercontent.com</string>
     <string name="google_sign_in_server_client_id">@string/default_web_client_id</string>
 </resources>
