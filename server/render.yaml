@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: phentist-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
