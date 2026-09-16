@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { OAuth2Client } from 'google-auth-library';
 import { SignJWT, jwtVerify } from 'jose';
 import crypto from 'node:crypto';
+import path from 'node:path';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { registerEssayRoutes } from './essays.js';
@@ -27,13 +28,14 @@ const jwtSecret = new TextEncoder().encode(sessionSecret);
 const google = new OAuth2Client(googleClientId);
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
 const appCorsOrigins = (process.env.ALLOWED_ORIGINS ?? '').split(',').map(x => x.trim()).filter(Boolean);
+const webRoot = path.resolve(process.cwd(), '../web');
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: appCorsOrigins.length ? appCorsOrigins : true, credentials: true, methods: ['GET', 'POST', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] }));
-app.use(express.json({ limit: '256kb' }));
-app.use(rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false }));
+app.use(cors({ origin: appCorsOrigins.length ? appCorsOrigins : true, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] }));
+app.use(express.json({ limit: '512kb' }));
+app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'phentist-api' }));
 
 const googleTokenSchema = z.object({ idToken: z.string().min(100).max(10000) });
@@ -84,6 +86,60 @@ function requireAdmin(req: express.Request, res: express.Response) { if (!isAdmi
 app.get('/v1/me', authenticate, (req,res) => { const a=(req as any).auth; res.json({ id:a.sub,email:a.email,role:a.role }); });
 app.get('/v1/admin/status', authenticate, (req,res) => { if (!requireAdmin(req,res)) return; res.json({ admin:true }); });
 
+const siteDefaults = {
+  brand: 'Phentist',
+  heroTitle: 'Your next academic advantage starts here.',
+  heroSubtitle: 'Explore university essay questions, learn from real responses, and unlock the full experience in the Phentist mobile app.',
+  heroEyebrow: 'UNIVERSITY ESSAYS • BUILT FOR STUDENTS',
+  downloadUrl: 'https://github.com/fentoph/phentist/releases/download/mobile-latest/phentist-debug.apk',
+  supportEmail: serviceEmail,
+  buyTitle: 'Essays are available to purchase in the mobile app.',
+  buySubtitle: 'Choose an essay on the web, then continue in Phentist for Android to complete the purchase and unlock the protected response.',
+  purchaseSteps: ['Find your university and essay question.', 'Open the Phentist Android app.', 'Purchase the essay there and read the full response securely.'],
+  whyMobile: 'Purchases and protected reading are intentionally kept inside the mobile app.',
+  footerText: 'Phentist — a Fentoph education product.'
+};
+
+const sitePatchSchema = z.object({
+  brand: z.string().trim().min(1).max(80).optional(),
+  heroTitle: z.string().trim().min(1).max(180).optional(),
+  heroSubtitle: z.string().trim().min(1).max(500).optional(),
+  heroEyebrow: z.string().trim().max(120).optional(),
+  downloadUrl: z.string().url().max(2000).optional(),
+  supportEmail: z.string().email().max(320).optional(),
+  buyTitle: z.string().trim().min(1).max(180).optional(),
+  buySubtitle: z.string().trim().min(1).max(500).optional(),
+  purchaseSteps: z.array(z.string().trim().min(1).max(240)).min(1).max(6).optional(),
+  whyMobile: z.string().trim().min(1).max(500).optional(),
+  footerText: z.string().trim().max(240).optional()
+});
+
+app.get('/v1/site', async (_req,res) => {
+  if (!pool) return res.json(siteDefaults);
+  try {
+    const result = await pool.query('SELECT setting_value FROM public.site_settings WHERE setting_key=$1 LIMIT 1', ['web']);
+    return res.json({ ...siteDefaults, ...(result.rows[0]?.setting_value ?? {}) });
+  } catch (error) {
+    console.error('Site settings read failed', error instanceof Error ? error.message : 'unknown');
+    return res.json(siteDefaults);
+  }
+});
+
+app.put('/v1/admin/site', authenticate, async (req,res) => {
+  if (!requireAdmin(req,res)) return;
+  if (!pool) return res.status(503).json({ error:'database_unavailable' });
+  const parsed = sitePatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error:'invalid_site_settings',details:parsed.error.flatten() });
+  try {
+    const a=(req as any).auth;
+    const current=await pool.query('SELECT setting_value FROM public.site_settings WHERE setting_key=$1 LIMIT 1',['web']);
+    const merged={...siteDefaults,...(current.rows[0]?.setting_value ?? {}),...parsed.data};
+    await pool.query(`INSERT INTO public.site_settings(setting_key,setting_value,updated_by,updated_at) VALUES($1,$2,$3,NOW())
+      ON CONFLICT(setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value,updated_by=EXCLUDED.updated_by,updated_at=NOW()`,['web',JSON.stringify(merged),String(a.sub)]);
+    res.json(merged);
+  } catch(error){ console.error('Site settings update failed',error instanceof Error?error.message:'unknown'); res.status(500).json({error:'site_settings_update_failed'}); }
+});
+
 const universitySchema = z.object({ name:z.string().trim().min(1).max(200), location:z.string().trim().min(1).max(200), imageUrl:z.string().url().max(2000).optional().or(z.literal('')) });
 app.get('/v1/universities', async (req,res) => {
   if (!pool) return res.status(503).json({ error:'database_unavailable' });
@@ -105,6 +161,14 @@ app.post('/v1/universities', authenticate, async (req,res) => {
     res.status(201).json({ university:result.rows[0] });
   } catch (error) { console.error('University creation failed', error instanceof Error ? error.message : 'unknown'); res.status(500).json({ error:'university_creation_failed' }); }
 });
+app.patch('/v1/universities/:id', authenticate, async (req,res) => {
+  if (!requireAdmin(req,res)) return;
+  if (!pool) return res.status(503).json({ error:'database_unavailable' });
+  const id=z.string().uuid().safeParse(req.params.id); const parsed=universitySchema.partial().safeParse(req.body);
+  if (!id.success || !parsed.success) return res.status(400).json({error:'invalid_university'});
+  try { const p=parsed.data; const result=await pool.query(`UPDATE public.universities SET name=COALESCE($2,name),location=COALESCE($3,location),image_url=CASE WHEN $4::text IS NULL THEN image_url ELSE NULLIF($4,'') END,updated_at=NOW() WHERE id=$1 RETURNING id,name,location,image_url,is_active,created_at`,[id.data,p.name ?? null,p.location ?? null,p.imageUrl ?? null]); if(!result.rowCount)return res.status(404).json({error:'university_not_found'}); res.json({university:result.rows[0]}); }
+  catch(error){console.error('University update failed',error instanceof Error?error.message:'unknown');res.status(500).json({error:'university_update_failed'});}
+});
 app.delete('/v1/universities/:id', authenticate, async (req,res) => {
   if (!requireAdmin(req,res)) return;
   if (!pool) return res.status(503).json({ error:'database_unavailable' });
@@ -119,7 +183,7 @@ registerEssayRoutes(app, pool, authenticate, requireAdmin);
 const paymentSchema=z.object({ name:z.string().trim().min(1).max(100),surname:z.string().trim().min(1).max(100),location:z.string().trim().min(1).max(200),phone:z.string().trim().min(7).max(30),serviceEmail:z.string().email().optional(),amountMinor:z.number().int().nonnegative().optional(),currency:z.string().trim().length(3).default('UZS'),contentId:z.string().uuid().optional(),note:z.string().trim().max(1000).optional() });
 app.post('/payments',authenticate,async(req,res)=>{
   const parsed=paymentSchema.safeParse(req.body); if(!parsed.success)return res.status(400).json({error:'invalid_payment',details:parsed.error.flatten()}); if(!pool)return res.status(503).json({error:'payments_database_unavailable'});
-  try { const p=parsed.data; const a=(req as any).auth; const result=await pool.query(`INSERT INTO public.payments(name,surname,location,phone,service_email,amount_minor,currency,content_id,note,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,name,surname,location,phone,service_email,amount_minor,currency,content_id,status,created_at`,[p.name,p.surname,p.location,p.phone,serviceEmail,p.amountMinor ?? null,p.currency,p.contentId ?? null,p.note ?? null,String(a.sub ?? a.email)]); res.status(201).json({payment:result.rows[0]}); }
+  try { const p=parsed.data; const a=(req as any).auth; const result=await pool.query(`INSERT INTO public.payments(name,surname,location,phone,service_email,amount_minor,currency,content_id,note,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,name,surname,location,phone,service_email,amount_minor,currency,content_id,status,created_at`,[p.name,p.surname,p.location,p.phone,p.serviceEmail ?? serviceEmail,p.amountMinor ?? null,p.currency,p.contentId ?? null,p.note ?? null,String(a.sub ?? a.email)]); res.status(201).json({payment:result.rows[0]}); }
   catch(error){console.error('Payment creation failed',error instanceof Error?error.message:'unknown');res.status(500).json({error:'payment_creation_failed'});}
 });
 
@@ -129,7 +193,13 @@ app.get('/payments',(req,res,next)=>{if(!basicAuth(req)){res.setHeader('WWW-Auth
   try{const result=await pool.query(`SELECT id,name,surname,location,phone,amount_minor,currency,status,created_at FROM public.payments ORDER BY created_at DESC LIMIT 100`);const rows=result.rows.map(r=>`<tr><td>${escapeHtml(String(r.id))}</td><td>${escapeHtml(String(r.name))} ${escapeHtml(String(r.surname))}</td><td>${escapeHtml(String(r.location))}</td><td>${escapeHtml(String(r.phone))}</td><td>${escapeHtml(String(r.amount_minor??''))} ${escapeHtml(String(r.currency))}</td><td>${escapeHtml(String(r.status))}</td><td>${escapeHtml(new Date(r.created_at).toISOString())}</td></tr>`).join('');res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Phentist Payments</title><style>body{font-family:system-ui,sans-serif;margin:24px;color:#17212b}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f4f6f8}</style></head><body><h1>Phentist Payments</h1><p>Last 100 payment records.</p><table><thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Phone</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead><tbody>${rows||'<tr><td colspan="7">No payments yet.</td></tr>'}</tbody></table></body></html>`);}
   catch(error){console.error('Payments page failed',error instanceof Error?error.message:'unknown');res.status(500).send('Unable to load payments');}
 });
+
+app.use(express.static(webRoot, { extensions: ['html'] }));
+app.use((req,res,next)=>{
+  if(req.method==='GET' && req.accepts('html') && !req.path.startsWith('/v1/') && req.path!=='/payments') return res.sendFile(path.join(webRoot,'index.html'));
+  next();
+});
 function escapeHtml(value:string){return value.replace(/[&<>\'\"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]??char));}
 app.use((_req,res)=>res.status(404).json({error:'not_found'}));
 app.use((err:unknown,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{console.error('Unhandled server error',err instanceof Error?err.message:'unknown');res.status(500).json({error:'internal_server_error'});});
-app.listen(port,'0.0.0.0',()=>console.log(`Phentist API listening on ${port}`));
+app.listen(port,'0.0.0.0',()=>console.log(`Phentist API + web listening on ${port}`));
