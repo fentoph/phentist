@@ -1,0 +1,5 @@
+ALTER TABLE public.university_essays
+  ADD COLUMN IF NOT EXISTS price_minor BIGINT NOT NULL DEFAULT 25000;
+
+ALTER TABLE public.university_essays
+  ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'UZS';
