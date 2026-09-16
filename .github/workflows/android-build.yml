@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,9 +25,16 @@ jobs:
           gradle-version: '8.13'
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: phentist-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Publish rolling mobile release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          gh release view mobile-latest >/dev/null 2>&1 || gh release create mobile-latest --title 'Phentist Mobile Latest' --notes 'Rolling Android build for the Phentist web download button.' --prerelease
+          gh release upload mobile-latest "$APK#phentist-debug.apk" --clobber
