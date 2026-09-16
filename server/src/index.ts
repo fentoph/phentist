@@ -8,6 +8,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import crypto from 'node:crypto';
 import { Pool } from 'pg';
 import { z } from 'zod';
+import { registerEssayRoutes } from './essays.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 10000);
@@ -112,6 +113,8 @@ app.delete('/v1/universities/:id', authenticate, async (req,res) => {
   try { const result=await pool.query(`UPDATE public.universities SET is_active=false,updated_at=NOW() WHERE id=$1 RETURNING id`,[id.data]); if (!result.rowCount) return res.status(404).json({error:'university_not_found'}); res.json({ok:true}); }
   catch (error) { console.error('University deletion failed', error instanceof Error ? error.message : 'unknown'); res.status(500).json({error:'university_deletion_failed'}); }
 });
+
+registerEssayRoutes(app, pool, authenticate, requireAdmin);
 
 const paymentSchema=z.object({ name:z.string().trim().min(1).max(100),surname:z.string().trim().min(1).max(100),location:z.string().trim().min(1).max(200),phone:z.string().trim().min(7).max(30),serviceEmail:z.string().email().optional(),amountMinor:z.number().int().nonnegative().optional(),currency:z.string().trim().length(3).default('UZS'),contentId:z.string().uuid().optional(),note:z.string().trim().max(1000).optional() });
 app.post('/payments',authenticate,async(req,res)=>{
