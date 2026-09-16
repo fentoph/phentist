@@ -32,7 +32,17 @@ const webRoot = path.resolve(process.cwd(), '../web');
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      'script-src': ["'self'", 'https://accounts.google.com'],
+      'frame-src': ["'self'", 'https://accounts.google.com', 'https://www.google.com'],
+      'connect-src': ["'self'", 'https://accounts.google.com'],
+      'img-src': ["'self'", 'data:', 'https:'],
+    },
+  },
+}));
 app.use(cors({ origin: appCorsOrigins.length ? appCorsOrigins : true, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json({ limit: '512kb' }));
 app.use(rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
@@ -145,7 +155,7 @@ app.get('/v1/universities', async (req,res) => {
   if (!pool) return res.status(503).json({ error:'database_unavailable' });
   const search = String(req.query.search ?? '').trim().slice(0,100);
   try {
-    const result = await pool.query(`SELECT id,name,location,image_url,is_active,created_at FROM public.universities
+    const result=await pool.query(`SELECT id,name,location,image_url,is_active,created_at FROM public.universities
       WHERE is_active=true AND ($1='' OR name ILIKE '%'||$1||'%' OR location ILIKE '%'||$1||'%') ORDER BY name ASC LIMIT 200`, [search]);
     res.json({ universities:result.rows });
   } catch (error) { console.error('University list failed', error instanceof Error ? error.message : 'unknown'); res.status(500).json({ error:'university_list_failed' }); }
@@ -187,7 +197,7 @@ app.post('/payments',authenticate,async(req,res)=>{
   catch(error){console.error('Payment creation failed',error instanceof Error?error.message:'unknown');res.status(500).json({error:'payment_creation_failed'});}
 });
 
-function basicAuth(req:express.Request){const header=req.header('authorization');if(!header?.startsWith('Basic '))return false;try{const decoded=Buffer.from(header.slice(6),'base64').toString('utf8');const i=decoded.indexOf(':');if(i<0)return false;const u=Buffer.from(decoded.slice(0,i)),eu=Buffer.from(paymentsBasicUsername!);const p=Buffer.from(decoded.slice(i+1)),ep=Buffer.from(paymentsBasicPassword!);return u.length===eu.length&&p.length===ep.length&&crypto.timingSafeEqual(u,eu)&&crypto.timingSafeEqual(p,ep);}catch{return false;}}
+function basicAuth(req:express.Request){const header=req.header('authorization');if(!header?.startsWith('Basic '))return false;try{const decoded=Buffer.from(header.slice(6),'base64').toString('utf8');const i=decoded.indexOf(':');if(i<0)return false;const u=Buffer.from(decoded.slice(0,i)),eu=Buffer.from(paymentsBasicUsername!);const p=Buffer.from(decoded.slice(i+1)),ep=Buffer.from(paymentsBasicPassword!);return u.length===eu.length&&p.length===ep.length&&crypto.timingSafeEqual(u,eu)&&p.length===ep.length&&crypto.timingSafeEqual(p,ep);}catch{return false;}}
 app.get('/payments',(req,res,next)=>{if(!basicAuth(req)){res.setHeader('WWW-Authenticate','Basic realm="Phentist Payments", charset="UTF-8"');return res.status(401).send('Authentication required');}next();},async(_req,res)=>{
   if(!pool)return res.status(503).send('Payments database is not configured.');
   try{const result=await pool.query(`SELECT id,name,surname,location,phone,amount_minor,currency,status,created_at FROM public.payments ORDER BY created_at DESC LIMIT 100`);const rows=result.rows.map(r=>`<tr><td>${escapeHtml(String(r.id))}</td><td>${escapeHtml(String(r.name))} ${escapeHtml(String(r.surname))}</td><td>${escapeHtml(String(r.location))}</td><td>${escapeHtml(String(r.phone))}</td><td>${escapeHtml(String(r.amount_minor??''))} ${escapeHtml(String(r.currency))}</td><td>${escapeHtml(String(r.status))}</td><td>${escapeHtml(new Date(r.created_at).toISOString())}</td></tr>`).join('');res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Phentist Payments</title><style>body{font-family:system-ui,sans-serif;margin:24px;color:#17212b}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f4f6f8}</style></head><body><h1>Phentist Payments</h1><p>Last 100 payment records.</p><table><thead><tr><th>ID</th><th>Name</th><th>Location</th><th>Phone</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead><tbody>${rows||'<tr><td colspan="7">No payments yet.</td></tr>'}</tbody></table></body></html>`);}
