@@ -13,7 +13,7 @@ object PhentistApi {
     data class SessionResult(val accessToken: String, val userId: String, val email: String, val displayName: String?, val isAdmin: Boolean)
     data class PaymentResult(val id: String, val status: String)
     data class University(val id: String, val name: String, val location: String, val imageUrl: String?)
-    data class Essay(val id: String, val universityId: String, val question: String, val wordLimit: Int, val previewText: String, val authorName: String, val authorAvatarUrl: String?)
+    data class Essay(val id: String, val universityId: String, val question: String, val wordLimit: Int, val previewText: String, val fullText: String, val authorName: String, val authorAvatarUrl: String?, val priceMinor: Long, val currency: String)
 
     suspend fun signInWithGoogle(idToken: String): Result<SessionResult> = withContext(Dispatchers.IO) {
         runCatching {
@@ -36,7 +36,12 @@ object PhentistApi {
         runCatching {
             val json = JSONObject(request("/v1/universities/$universityId/essays", "GET", "{}"))
             val array = json.getJSONArray("essays")
-            buildList { for (i in 0 until array.length()) { val e=array.getJSONObject(i); add(Essay(e.getString("id"),e.getString("university_id"),e.getString("question"),e.optInt("word_limit",650),e.optString("preview_text"),e.optString("author_name","Phentist"),if(e.isNull("author_avatar_url")) null else e.optString("author_avatar_url"))) } }
+            buildList {
+                for (i in 0 until array.length()) {
+                    val e=array.getJSONObject(i)
+                    add(Essay(e.getString("id"),e.getString("university_id"),e.getString("question"),e.optInt("word_limit",650),e.optString("preview_text"),e.optString("full_text"),e.optString("author_name","Phentist"),if(e.isNull("author_avatar_url")) null else e.optString("author_avatar_url"),e.optLong("price_minor",25000),e.optString("currency","UZS")))
+                }
+            }
         }
     }
 
@@ -48,11 +53,11 @@ object PhentistApi {
         }
     }
 
-    suspend fun addEssay(accessToken: String, universityId: String, question: String, wordLimit: Int, previewText: String, authorName: String, authorAvatarUrl: String): Result<Essay> = withContext(Dispatchers.IO) {
+    suspend fun addEssay(accessToken: String, universityId: String, question: String, wordLimit: Int, previewText: String, fullText: String, authorName: String, authorAvatarUrl: String, priceMinor: Long): Result<Essay> = withContext(Dispatchers.IO) {
         runCatching {
-            val body=JSONObject().put("universityId",universityId).put("question",question).put("wordLimit",wordLimit).put("previewText",previewText).put("authorName",authorName).put("authorAvatarUrl",authorAvatarUrl).put("fullText",previewText)
+            val body=JSONObject().put("universityId",universityId).put("question",question).put("wordLimit",wordLimit).put("previewText",previewText).put("authorName",authorName).put("authorAvatarUrl",authorAvatarUrl).put("fullText",fullText).put("priceMinor",priceMinor).put("currency","UZS")
             val e=JSONObject(request("/v1/university-essays","POST",body.toString(),accessToken)).getJSONObject("essay")
-            Essay(e.getString("id"),e.getString("university_id"),e.getString("question"),e.optInt("word_limit",650),e.optString("preview_text"),e.optString("author_name","Phentist"),if(e.isNull("author_avatar_url"))null else e.optString("author_avatar_url"))
+            Essay(e.getString("id"),e.getString("university_id"),e.getString("question"),e.optInt("word_limit",650),e.optString("preview_text"),e.optString("full_text"),e.optString("author_name","Phentist"),if(e.isNull("author_avatar_url"))null else e.optString("author_avatar_url"),e.optLong("price_minor",25000),e.optString("currency","UZS"))
         }
     }
 
