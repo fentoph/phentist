@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/v1/:path*", "destination": "https://phentist.onrender.com/v1/:path*" },
+    { "source": "/payments/:path*", "destination": "https://phentist.onrender.com/payments/:path*" },
+    { "source": "/health", "destination": "https://phentist.onrender.com/health" },
+    { "source": "/", "destination": "/web/index.html" },
+    { "source": "/administration", "destination": "/web/index.html" },
+    { "source": "/buy", "destination": "/web/index.html" },
+    { "source": "/:path*", "destination": "/web/:path*" }
+  ]
+}
